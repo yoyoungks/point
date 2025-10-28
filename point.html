@@ -1,0 +1,419 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>四维气泡 — 纯网页（果冻）</title>
+<style>
+  :root{
+    --bg:#0f1724;
+    --panel: rgba(255,255,255,0.06);
+    --ui-bg: rgba(255,255,255,0.9);
+  }
+  html,body{height:100%;margin:0;font-family: "PingFang SC", "Noto Sans SC", system-ui, sans-serif;background:linear-gradient(180deg,#051023 0%, #081426 60%);color:#fff}
+  canvas{display:block;width:100vw;height:100vh;}
+  #ui {
+    position: fixed;
+    left:50%;
+    bottom:24px;
+    transform:translateX(-50%);
+    width:78%;
+    max-width:980px;
+    background: rgba(255,255,255,0.06);
+    border-radius:34px;
+    padding:10px 16px;
+    display:flex;
+    gap:12px;
+    align-items:center;
+    backdrop-filter: blur(8px);
+    box-shadow: 0 6px 20px rgba(2,6,23,0.5);
+    border: 1px solid rgba(255,255,255,0.04);
+  }
+  #input {
+    flex:1;
+    background:transparent;
+    border: none;
+    color: #fff;
+    outline:none;
+    font-size:16px;
+    padding:8px 12px;
+  }
+  #confirm{
+    background: rgba(255,255,255,0.06);
+    color:#fff;
+    border-radius:20px;
+    border:1px solid rgba(255,255,255,0.06);
+    padding:8px 12px;
+    cursor:pointer;
+  }
+  #exportBtn{
+    position:fixed;
+    top:16px;
+    right:16px;
+    padding:8px 12px;
+    border-radius:8px;
+    background: rgba(255,255,255,0.9);
+    color:#0f1724;
+    border:none;
+    cursor:pointer;
+    box-shadow: 0 6px 18px rgba(2,6,23,0.4);
+  }
+  #hint{
+    position:fixed;
+    left:16px;
+    bottom:18px;
+    color:rgba(255,255,255,0.4);
+    font-size:13px;
+  }
+  a.small{color:#8fb7ff;font-size:13px;margin-left:8px;text-decoration:none}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="ui" role="region" aria-label="输入区">
+  <input id="input" placeholder="写下此刻的想法，按回车生成气泡..." />
+  <button id="confirm">确认</button>
+</div>
+
+<button id="exportBtn">导出 TXT</button>
+<div id="hint">拖拽画布来平移 • 气泡呈果冻态 • (初始: 1 个)</div>
+
+<script>
+/* 四维气泡 — 纯前端果冻版
+   说明：
+   - 每个气泡是一个软体（若干环形节点 = 弹簧链），绘制为平滑闭合曲线（Catmull-Rom -> bezier）
+   - 中心点有位置、速度；节点围绕半径摆动（受弹性、阻尼、相邻节点拉力）
+   - 简单碰撞避免中心重叠（中心间分离力）
+   - 支持画布平移（拖拽）与导出带序号 TXT
+*/
+
+// canvas 初始化
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let DPR = window.devicePixelRatio || 1;
+function fit() {
+  DPR = window.devicePixelRatio || 1;
+  canvas.width = Math.floor(window.innerWidth * DPR);
+  canvas.height = Math.floor(window.innerHeight * DPR);
+  canvas.style.width = window.innerWidth + 'px';
+  canvas.style.height = window.innerHeight + 'px';
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+fit();
+window.addEventListener('resize', fit);
+
+// 全局变量
+let bubbles = [];
+let pan = {x:0, y:0, vx:0, vy:0};
+let isPanning=false, lastPan=null;
+const MAX_BUBBLES = 1; // 根据你要求，初始单气泡（但用户可以创建更多）
+const DEFAULT_FONT = "16px sans-serif";
+
+// 工具函数
+const rnd = (a,b) => a + Math.random()*(b-a);
+
+// Catmull-Rom to cubic bezier helper for smooth blob
+function catmullRom2bezier(points){
+  // points: [[x,y],...] closed assumed
+  // returns array of bezier segments: [{p0,p1,p2,p3},...]
+  const bez = [];
+  const len = points.length;
+  for(let i=0;i<len;i++){
+    const p0 = points[(i-1+len)%len];
+    const p1 = points[i];
+    const p2 = points[(i+1)%len];
+    const p3 = points[(i+2)%len];
+    const bp1 = [
+      p1[0] + (p2[0]-p0[0]) / 6,
+      p1[1] + (p2[1]-p0[1]) / 6
+    ];
+    const bp2 = [
+      p2[0] - (p3[0]-p1[0]) / 6,
+      p2[1] - (p3[1]-p1[1]) / 6
+    ];
+    bez.push({p1, bp1, bp2, p2});
+  }
+  return bez;
+}
+
+// Bubble 类：中心 + 环形节点
+class Bubble {
+  constructor(text, x, y, baseR=70, color=null){
+    this.text = text || "想法";
+    this.x = x;
+    this.y = y;
+    this.vx = rnd(-0.2,0.2);
+    this.vy = rnd(-0.2,0.2);
+    this.baseR = baseR;
+    this.r = baseR;
+    this.seed = Math.random()*1000;
+    this.t = Date.now();
+    this.color = color || `rgba(140,180,255,0.85)`;
+    // nodes around circumference
+    this.nodeCount = 24; // 边缘细分，数越大越平滑
+    this.nodes = [];
+    for(let i=0;i<this.nodeCount;i++){
+      const a = (i / this.nodeCount) * Math.PI * 2;
+      const radial = baseR * (0.92 + Math.random()*0.16);
+      this.nodes.push({
+        ang: a,
+        rad: radial,
+        vr: 0, // radial velocity
+        rest: baseR,
+      });
+    }
+  }
+
+  // apply forces on center and nodes
+  step(dt){
+    const floatForce = 0.0008; // 微小向上的力（可调整）
+    // slow random drift (你选的慢速漂浮)
+    this.vx += Math.sin((this.seed + performance.now()*0.0002))*0.0002;
+    this.vy += Math.cos((this.seed + performance.now()*0.00015))*0.00018 - floatForce;
+    // integrate center
+    this.x += this.vx * dt;
+    this.y += this.vy * dt;
+
+    // Node dynamics — radial spring to rest and neighbor coupling
+    const stiffness = 0.06; // 弹性强度（越大越硬）
+    const damping = 0.86;   // 阻尼（越小越黏）
+    const neighborInfluence = 0.08; // 邻节点拉力（越大越平滑）
+    for(let i=0;i<this.nodeCount;i++){
+      const n = this.nodes[i];
+      // spring to rest radius
+      const dr = n.rest - n.rad;
+      n.vr += dr * stiffness;
+      // neighbor smoothing
+      const left = this.nodes[(i-1+this.nodeCount)%this.nodeCount];
+      const right = this.nodes[(i+1)%this.nodeCount];
+      const avg = (left.rad + right.rad + n.rad) / 3;
+      n.vr += (avg - n.rad) * neighborInfluence;
+      // small perlin-like oscillation using seed+time
+      const time = performance.now()*0.002 + this.seed;
+      n.vr += Math.sin(n.ang*3 + time + i)*0.12;
+      // integrate radial
+      n.rad += n.vr * dt * 0.06;
+      n.vr *= damping;
+    }
+  }
+
+  // draw as smooth blob
+  draw(ctx, pan){
+    const pts = [];
+    for(const n of this.nodes){
+      const a = n.ang;
+      const rr = n.rad;
+      const px = this.x + Math.cos(a)*rr + pan.x;
+      const py = this.y + Math.sin(a)*rr + pan.y;
+      pts.push([px,py]);
+    }
+    const beziers = catmullRom2bezier(pts);
+    ctx.save();
+    // shadow/blur glow
+    ctx.beginPath();
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    for(const b of beziers){
+      ctx.bezierCurveTo(b.bp1[0], b.bp1[1], b.bp2[0], b.bp2[1], b.p2[0], b.p2[1]);
+    }
+    ctx.closePath();
+    // fill with soft glow: draw shadow then fill
+    ctx.shadowColor = this.color;
+    ctx.shadowBlur = 24;
+    ctx.fillStyle = this.color;
+    ctx.fill();
+
+    // inner stroke
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // text (wrap if long)
+    ctx.fillStyle = '#041024';
+    ctx.font = DEFAULT_FONT;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const lines = wrapText(ctx, this.text, this.baseR*1.4);
+    const lineHeight = 18;
+    const startY = this.y + pan.y - (lines.length-1)*lineHeight/2;
+    for(let i=0;i<lines.length;i++){
+      ctx.fillText(lines[i], this.x + pan.x, startY + i*lineHeight);
+    }
+
+    ctx.restore();
+  }
+}
+
+// simple text wrapper by width
+function wrapText(ctx, text, maxWidth) {
+  const words = text.split(/\s+/).join(' ').split(' ');
+  const lines = [];
+  let cur = '';
+  for(const w of words){
+    const test = cur ? (cur + ' ' + w) : w;
+    const wWidth = ctx.measureText(test).width;
+    if(wWidth > maxWidth && cur){
+      lines.push(cur);
+      cur = w;
+    } else {
+      cur = test;
+    }
+  }
+  if(cur) lines.push(cur);
+  return lines;
+}
+
+// 添加气泡：放置位置不重叠（尝试散开）
+function addBubble(text){
+  // compute reasonable radius
+  const baseR = Math.min(150, Math.max(40, 24 + text.length*4));
+  // initial center attempt: screen center + random offset
+  let x = (window.innerWidth/2 - pan.x) + rnd(-80,80);
+  let y = (window.innerHeight/2 - pan.y) + rnd(-80,80);
+
+  // if colliding with existing, push out
+  for(let attempt=0; attempt<40; attempt++){
+    let coll = false;
+    for(const b of bubbles){
+      const dx = x - b.x;
+      const dy = y - b.y;
+      const dist = Math.hypot(dx,dy);
+      if(dist < baseR + b.baseR + 12){
+        coll = true;
+        // push away along random direction
+        const ang = Math.atan2(dy,dx) || (Math.random()*Math.PI*2);
+        x = b.x + (baseR + b.baseR + 18) * Math.cos(ang);
+        y = b.y + (baseR + b.baseR + 18) * Math.sin(ang);
+      }
+    }
+    if(!coll) break;
+  }
+
+  const bubble = new Bubble(text, x, y, baseR);
+  bubbles.push(bubble);
+  // if we exceed MAX_BUBBLES (allowed creation but if we want to cap), we could drop oldest
+  // For now we allow user to create multiple, but initial default is one.
+}
+
+// center separation (prevent centers overlap)
+function separation(){
+  for(let i=0;i<bubbles.length;i++){
+    for(let j=i+1;j<bubbles.length;j++){
+      const a = bubbles[i], b = bubbles[j];
+      let dx = a.x - b.x, dy = a.y - b.y;
+      let dist = Math.hypot(dx,dy) || 0.001;
+      const minD = a.baseR + b.baseR + 8;
+      if(dist < minD){
+        const push = (minD - dist) * 0.02; // strength of separation
+        dx /= dist; dy /= dist;
+        a.x += dx * push;
+        a.y += dy * push;
+        b.x -= dx * push;
+        b.y -= dy * push;
+        // small velocity transfer for wobble
+        a.vx += dx*push*0.2; a.vy += dy*push*0.2;
+        b.vx -= dx*push*0.2; b.vy -= dy*push*0.2;
+      }
+    }
+  }
+}
+
+// animation loop
+let lastTime = performance.now();
+function frame(now){
+  const dt = Math.min(32, now - lastTime);
+  lastTime = now;
+
+  // physics step
+  for(const b of bubbles){
+    b.step(dt);
+  }
+  separation();
+
+  // clear
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  // background subtle gradient
+  const g = ctx.createLinearGradient(0,0,0,window.innerHeight);
+  g.addColorStop(0, 'rgba(5,10,35,0.85)');
+  g.addColorStop(1, 'rgba(8,12,22,0.9)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0,0,window.innerWidth,window.innerHeight);
+
+  // draw all bubbles
+  for(const b of bubbles){
+    b.draw(ctx, pan);
+  }
+
+  // pan inertia
+  pan.x += pan.vx; pan.y += pan.vy;
+  pan.vx *= 0.92; pan.vy *= 0.92;
+
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// canvas panning handlers
+canvas.addEventListener('pointerdown', (e) => {
+  isPanning = true;
+  lastPan = [e.clientX, e.clientY];
+  canvas.setPointerCapture(e.pointerId);
+});
+canvas.addEventListener('pointermove', (e) => {
+  if(!isPanning) return;
+  const dx = e.clientX - lastPan[0];
+  const dy = e.clientY - lastPan[1];
+  pan.x += dx;
+  pan.y += dy;
+  pan.vx = dx; pan.vy = dy;
+  lastPan = [e.clientX, e.clientY];
+});
+canvas.addEventListener('pointerup', (e) => {
+  isPanning = false;
+  lastPan = null;
+  try { canvas.releasePointerCapture && canvas.releasePointerCapture(e.pointerId); } catch(e){}
+});
+canvas.addEventListener('pointercancel', ()=>{ isPanning=false; lastPan=null; });
+
+// UI interactions
+const input = document.getElementById('input');
+const confirm = document.getElementById('confirm');
+const exportBtn = document.getElementById('exportBtn');
+
+confirm.addEventListener('click', () => {
+  if(!input.value.trim()) return;
+  addBubble(input.value.trim());
+  input.value = '';
+});
+
+input.addEventListener('keydown', (e) => {
+  if(e.key === 'Enter' && input.value.trim()){
+    addBubble(input.value.trim());
+    input.value = '';
+  }
+});
+
+// export TXT with numbering
+exportBtn.addEventListener('click', () => {
+  const ordered = bubbles.slice().sort((a,b) => a.t - b.t || 0);
+  const lines = ordered.map((b,i) => `${i+1}. ${b.text}`);
+  const blob = new Blob([lines.join('\n')], {type:'text/plain;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'siwei_qipao.txt';
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+// create initial single bubble (你的要求：1个)
+addBubble("第一次的想法，欢迎你进入四维气泡。");
+
+// convenience: expose for debug in console
+window._bubbles = bubbles;
+window._pan = pan;
+
+</script>
+</body>
+</html>
