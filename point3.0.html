@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>四维气泡</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+        }
+        
+        body {
+            background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 50%, #2a2a2a 100%);
+            color: #e6e6e6;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+        
+        .container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            position: relative;
+        }
+        
+        .input-area {
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            z-index: 10;
+            width: 500px;
+            max-width: 80vw;
+        }
+        
+        #text-input {
+            flex: 1;
+            padding: 15px 20px;
+            border: none;
+            border-radius: 30px;
+            background: rgba(255, 255, 255, 0.08);
+            backdrop-filter: blur(15px);
+            -webkit-backdrop-filter: blur(15px);
+            color: rgba(255, 255, 255, 0.9);
+            font-size: 1rem;
+            outline: none;
+            box-shadow: 
+                0 4px 20px rgba(0, 0, 0, 0.3),
+                inset 0 1px 0 rgba(255, 255, 255, 0.1);
+            transition: all 0.4s ease;
+        }
+        
+        #text-input:focus {
+            background: rgba(255, 255, 255, 0.12);
+            box-shadow: 
+                0 6px 25px rgba(0, 0, 0, 0.4),
+                inset 0 1px 0 rgba(255, 255, 255, 0.15);
+        }
+        
+        #text-input::placeholder {
+            color: rgba(255, 255, 255, 0.4);
+        }
+        
+        #create-btn {
+            margin-left: 12px;
+            padding: 15px 25px;
+            border: none;
+            border-radius: 30px;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(15px);
+            -webkit-backdrop-filter: blur(15px);
+            color: rgba(255, 255, 255, 0.9);
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.4s ease;
+            box-shadow: 
+                0 4px 20px rgba(0, 0, 0, 0.3),
+                inset 0 1px 0 rgba(255, 255, 255, 0.1);
+        }
+        
+        #create-btn:hover {
+            background: rgba(255, 255, 255, 0.15);
+            transform: translateY(-2px);
+            box-shadow: 
+                0 6px 25px rgba(0, 0, 0, 0.4),
+                inset 0 1px 0 rgba(255, 255, 255, 0.15);
+        }
+        
+        .canvas-container {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        #bubble-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            cursor: grab;
+        }
+        
+        #bubble-canvas:active {
+            cursor: grabbing;
+        }
+        
+        .controls {
+            position: absolute;
+            bottom: 100px;
+            right: 30px;
+            display: flex;
+            gap: 10px;
+            z-index: 10;
+        }
+        
+        .control-btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 20px;
+            background: rgba(255, 255, 255, 0.08);
+            backdrop-filter: blur(15px);
+            -webkit-backdrop-filter: blur(15px);
+            color: rgba(255, 255, 255, 0.8);
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+            font-size: 0.9rem;
+        }
+        
+        .control-btn:hover {
+            background: rgba(255, 255, 255, 0.12);
+            transform: translateY(-2px);
+        }
+        
+        .bubble-count {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            z-index: 10;
+            color: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="canvas-container">
+            <canvas id="bubble-canvas"></canvas>
+        </div>
+        
+        <div class="bubble-count">气泡: <span id="bubble-counter">0</span></div>
+        
+        <div class="controls">
+            <button id="export-btn" class="control-btn">导出</button>
+            <button id="clear-btn" class="control-btn">清空</button>
+        </div>
+        
+        <div class="input-area">
+            <input type="text" id="text-input" placeholder="">
+            <button id="create-btn">生成</button>
+        </div>
+    </div>
+
+    <script>
+        // 获取Canvas元素和上下文
+        const canvas = document.getElementById('bubble-canvas');
+        const ctx = canvas.getContext('2d');
+        
+        // 设置Canvas尺寸
+        function resizeCanvas() {
+            canvas.width = canvas.offsetWidth * window.devicePixelRatio;
+            canvas.height = canvas.offsetHeight * window.devicePixelRatio;
+            ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+        }
+        
+        // 初始化Canvas尺寸
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+        
+        // 气泡类
+        class Bubble {
+            constructor(text, x, y) {
+                this.text = text;
+                this.x = x;
+                this.y = y;
+                this.vx = (Math.random() - 0.5) * 0.5;
+                this.vy = (Math.random() - 0.5) * 0.5;
+                
+                // 根据文本长度计算气泡大小 - 固定算法
+                const textLength = text.length;
+                let radius, fontSize, charsPerLine;
+                
+                if (textLength <= 10) {
+                    // 小气泡 - 10字以内
+                    radius = 60;
+                    fontSize = 16;
+                    charsPerLine = 8;
+                } else if (textLength <= 20) {
+                    // 中气泡 - 11-20字
+                    radius = 80;
+                    fontSize = 15;
+                    charsPerLine = 10;
+                } else if (textLength <= 30) {
+                    // 大气泡 - 21-30字
+                    radius = 100;
+                    fontSize = 14;
+                    charsPerLine = 12;
+                } else {
+                    // 特大气泡 - 30字以上
+                    radius = 120;
+                    fontSize = 13;
+                    charsPerLine = 14;
+                }
+                
+                this.radius = radius;
+                this.fontSize = fontSize;
+                
+                // 气泡颜色 - 使用黑白灰透明色
+                const colors = [
+                    'rgba(255, 255, 255, 0.4)',
+                    'rgba(230, 230, 230, 0.4)',
+                    'rgba(200, 200, 200, 0.4)',
+                    'rgba(180, 180, 180, 0.4)',
+                    'rgba(160, 160, 160, 0.4)',
+                    'rgba(140, 140, 140, 0.4)'
+                ];
+                this.color = colors[Math.floor(Math.random() * colors.length)];
+                
+                // 文本换行 - 基于固定算法
+                this.lines = this.wrapTextByChars(text, charsPerLine);
+            }
+            
+            // 基于字符数的换行处理
+            wrapTextByChars(text, charsPerLine) {
+                const lines = [];
+                let currentLine = '';
+                
+                // 将文本按字符分割
+                const chars = text.split('');
+                
+                for (let i = 0; i < chars.length; i++) {
+                    currentLine += chars[i];
+                    
+                    // 达到每行字符数或遇到标点符号时换行
+                    if (currentLine.length >= charsPerLine || 
+                        i === chars.length - 1 ||
+                        ['。', '，', '；', '！', '？', '.', ',', ';', '!', '?'].includes(chars[i])) {
+                        lines.push(currentLine);
+                        currentLine = '';
+                    }
+                }
+                
+                // 如果最后还有剩余字符，添加到最后一行
+                if (currentLine) {
+                    lines.push(currentLine);
+                }
+                
+                return lines;
+            }
+            
+            // 更新气泡状态
+            update() {
+                // 更新位置
+                this.x += this.vx;
+                this.y += this.vy;
+                
+                // 边界检查
+                const padding = 50;
+                const scaledWidth = canvas.width / window.devicePixelRatio;
+                const scaledHeight = canvas.height / window.devicePixelRatio;
+                
+                if (this.x < padding || this.x > scaledWidth - padding) {
+                    this.vx *= -0.8;
+                    this.x = Math.max(padding, Math.min(scaledWidth - padding, this.x));
+                }
+                if (this.y < padding || this.y > scaledHeight - padding) {
+                    this.vy *= -0.8;
+                    this.y = Math.max(padding, Math.min(scaledHeight - padding, this.y));
+                }
+                
+                // 添加随机漂浮
+                this.vx += (Math.random() - 0.5) * 0.02;
+                this.vy += (Math.random() - 0.5) * 0.02;
+                
+                // 限制速度
+                const maxSpeed = 1;
+                const speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+                if (speed > maxSpeed) {
+                    this.vx = (this.vx / speed) * maxSpeed;
+                    this.vy = (this.vy / speed) * maxSpeed;
+                }
+                
+                // 添加阻尼
+                this.vx *= 0.99;
+                this.vy *= 0.99;
+            }
+            
+            // 绘制气泡
+            draw() {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                
+                // 绘制气泡阴影
+                ctx.beginPath();
+                ctx.arc(0, 0, this.radius + 5, 0, Math.PI * 2);
+                const shadowGradient = ctx.createRadialGradient(0, 0, this.radius, 0, 0, this.radius + 10);
+                shadowGradient.addColorStop(0, 'rgba(0, 0, 0, 0.2)');
+                shadowGradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+                ctx.fillStyle = shadowGradient;
+                ctx.fill();
+                
+                // 绘制圆形气泡
+                ctx.beginPath();
+                ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+                
+                // 填充气泡 - 使用渐变增加立体感
+                const bubbleGradient = ctx.createRadialGradient(
+                    -this.radius * 0.2, -this.radius * 0.2, 0,
+                    0, 0, this.radius
+                );
+                bubbleGradient.addColorStop(0, this.color.replace('0.4', '0.6'));
+                bubbleGradient.addColorStop(1, this.color.replace('0.4', '0.2'));
+                
+                ctx.fillStyle = bubbleGradient;
+                ctx.fill();
+                
+                // 气泡边框
+                ctx.strokeStyle = this.color.replace('0.4', '0.7');
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+                
+                // 绘制内部高光
+                ctx.beginPath();
+                ctx.arc(-this.radius * 0.3, -this.radius * 0.3, this.radius * 0.15, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+                ctx.fill();
+                
+                // 绘制文本
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+                ctx.font = `${this.fontSize}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+                
+                // 多行文本
+                const lineHeight = this.fontSize + 4;
+                const totalHeight = (this.lines.length - 1) * lineHeight;
+                const startY = -totalHeight / 2;
+                
+                for (let i = 0; i < this.lines.length; i++) {
+                    ctx.fillText(this.lines[i], 0, startY + i * lineHeight);
+                }
+                
+                ctx.restore();
+            }
+        }
+        
+        // 应用状态
+        const state = {
+            bubbles: [],
+            offsetX: 0,
+            offsetY: 0,
+            isDragging: false,
+            lastMouseX: 0,
+            lastMouseY: 0
+        };
+        
+        // 创建气泡
+        function createBubble(text) {
+            if (!text.trim()) return;
+            
+            // 第一个气泡放在中心，后续气泡围绕第一个气泡
+            let x, y;
+            const scaledWidth = canvas.width / window.devicePixelRatio;
+            const scaledHeight = canvas.height / window.devicePixelRatio;
+            
+            if (state.bubbles.length === 0) {
+                x = scaledWidth / 2;
+                y = scaledHeight / 2;
+            } else {
+                const firstBubble = state.bubbles[0];
+                const angle = Math.random() * Math.PI * 2;
+                const distance = 180 + Math.random() * 100;
+                x = firstBubble.x + Math.cos(angle) * distance;
+                y = firstBubble.y + Math.sin(angle) * distance;
+            }
+            
+            const bubble = new Bubble(text, x, y);
+            state.bubbles.push(bubble);
+            updateBubbleCounter();
+        }
+        
+        // 更新气泡计数器
+        function updateBubbleCounter() {
+            document.getElementById('bubble-counter').textContent = state.bubbles.length;
+        }
+        
+        // 气泡碰撞检测与处理
+        function handleCollisions() {
+            for (let i = 0; i < state.bubbles.length; i++) {
+                for (let j = i + 1; j < state.bubbles.length; j++) {
+                    const bubble1 = state.bubbles[i];
+                    const bubble2 = state.bubbles[j];
+                    
+                    const dx = bubble2.x - bubble1.x;
+                    const dy = bubble2.y - bubble1.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    const minDistance = bubble1.radius + bubble2.radius + 10; // 添加间隙
+                    
+                    if (distance < minDistance) {
+                        // 碰撞响应
+                        const angle = Math.atan2(dy, dx);
+                        const overlap = minDistance - distance;
+                        
+                        // 分离气泡
+                        const moveX = (overlap * 0.5) * Math.cos(angle);
+                        const moveY = (overlap * 0.5) * Math.sin(angle);
+                        
+                        bubble1.x -= moveX;
+                        bubble1.y -= moveY;
+                        bubble2.x += moveX;
+                        bubble2.y += moveY;
+                        
+                        // 速度交换
+                        const tempVx = bubble1.vx;
+                        const tempVy = bubble1.vy;
+                        bubble1.vx = bubble2.vx * 0.8;
+                        bubble1.vy = bubble2.vy * 0.8;
+                        bubble2.vx = tempVx * 0.8;
+                        bubble2.vy = tempVy * 0.8;
+                    }
+                }
+            }
+        }
+        
+        // 动画循环
+        function animate() {
+            // 清除画布
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // 应用画布偏移
+            ctx.save();
+            ctx.translate(state.offsetX, state.offsetY);
+            
+            // 更新和绘制所有气泡
+            state.bubbles.forEach(bubble => {
+                bubble.update();
+                bubble.draw();
+            });
+            
+            ctx.restore();
+            
+            // 处理碰撞
+            handleCollisions();
+            
+            // 继续动画
+            requestAnimationFrame(animate);
+        }
+        
+        // 初始化事件监听
+        function initEventListeners() {
+            // 创建气泡按钮
+            document.getElementById('create-btn').addEventListener('click', () => {
+                const textInput = document.getElementById('text-input');
+                createBubble(textInput.value);
+                textInput.value = '';
+                textInput.focus();
+            });
+            
+            // 回车键创建气泡
+            document.getElementById('text-input').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    document.getElementById('create-btn').click();
+                }
+            });
+            
+            // 导出文本
+            document.getElementById('export-btn').addEventListener('click', () => {
+                if (state.bubbles.length === 0) {
+                    alert('还没有创建任何气泡！');
+                    return;
+                }
+                
+                const text = state.bubbles.map(bubble => bubble.text).join('\n');
+                const blob = new Blob([text], { type: 'text/plain' });
+                const url = URL.createObjectURL(blob);
+                
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = '四维气泡记录.txt';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            });
+            
+            // 清空气泡
+            document.getElementById('clear-btn').addEventListener('click', () => {
+                if (confirm('确定要清空所有气泡吗？')) {
+                    state.bubbles = [];
+                    updateBubbleCounter();
+                }
+            });
+            
+            // 画布拖拽
+            canvas.addEventListener('mousedown', (e) => {
+                state.isDragging = true;
+                state.lastMouseX = e.clientX;
+                state.lastMouseY = e.clientY;
+                canvas.style.cursor = 'grabbing';
+            });
+            
+            canvas.addEventListener('mousemove', (e) => {
+                if (!state.isDragging) return;
+                
+                const dx = e.clientX - state.lastMouseX;
+                const dy = e.clientY - state.lastMouseY;
+                
+                state.offsetX += dx;
+                state.offsetY += dy;
+                
+                state.lastMouseX = e.clientX;
+                state.lastMouseY = e.clientY;
+            });
+            
+            canvas.addEventListener('mouseup', () => {
+                state.isDragging = false;
+                canvas.style.cursor = 'grab';
+            });
+            
+            canvas.addEventListener('mouseleave', () => {
+                state.isDragging = false;
+                canvas.style.cursor = 'grab';
+            });
+        }
+        
+        // 初始化应用
+        function init() {
+            // 创建示例气泡
+            createBubble("思维");
+            createBubble("想法");
+            createBubble("灵感");
+            
+            // 初始化事件监听
+            initEventListeners();
+            
+            // 开始动画
+            animate();
+        }
+        
+        // 启动应用
+        init();
+    </script>
+</body>
+</html>
