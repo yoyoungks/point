@@ -1,106 +1,284 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
 <head>
-    <title>思维气泡 - 可视化笔记软件</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>思维气泡 - 手机笔记</title>
+    <meta name="theme-color" content="#1a1a1a">
+    <link rel="manifest" href="manifest.json">
     <style>
-        .app-container {
-            display: flex;
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+            touch-action: manipulation;
+        }
+        
+        body {
+            background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 100%);
+            color: #ffffff;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             height: 100vh;
+            overflow: hidden;
+            position: fixed;
+            width: 100%;
         }
         
-        .sidebar {
-            width: 300px;
-            background: #2a2a2a;
-            border-right: 1px solid #444;
+        .app-container {
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
         }
         
-        .theme-list {
-            padding: 20px;
+        /* 顶部标题栏 */
+        .header {
+            padding: 15px;
+            background: rgba(30, 30, 30, 0.9);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid #333;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
         
-        .theme-item {
-            padding: 10px;
-            margin: 5px 0;
-            background: #333;
-            border-radius: 5px;
-            cursor: pointer;
+        .theme-selector {
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            color: white;
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-size: 14px;
         }
         
-        .main-canvas {
+        /* 主画布区域 */
+        .canvas-container {
             flex: 1;
             position: relative;
             overflow: hidden;
+            touch-action: none;
         }
         
+        #bubble-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+        
+        /* 底部输入区域 */
+        .input-area {
+            padding: 15px;
+            background: rgba(30, 30, 30, 0.9);
+            backdrop-filter: blur(20px);
+            border-top: 1px solid #333;
+        }
+        
+        .input-group {
+            display: flex;
+            gap: 10px;
+        }
+        
+        #text-input {
+            flex: 1;
+            padding: 12px 15px;
+            border: none;
+            border-radius: 25px;
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            font-size: 16px;
+            outline: none;
+        }
+        
+        #text-input::placeholder {
+            color: rgba(255, 255, 255, 0.5);
+        }
+        
+        #create-btn {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 25px;
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            font-weight: 500;
+        }
+        
+        /* 控制按钮 */
         .controls {
             position: absolute;
-            top: 20px;
-            right: 20px;
-            z-index: 100;
+            bottom: 80px;
+            right: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        
+        .control-btn {
+            width: 50px;
+            height: 50px;
+            border: none;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(20px);
+            color: white;
+            font-size: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        /* 主题管理面板 */
+        .theme-panel {
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 80%;
+            height: 100%;
+            background: rgba(20, 20, 20, 0.95);
+            backdrop-filter: blur(30px);
+            transition: left 0.3s ease;
+            z-index: 1000;
+            padding: 20px;
+            overflow-y: auto;
+        }
+        
+        .theme-panel.active {
+            left: 0;
+        }
+        
+        .theme-item {
+            padding: 15px;
+            margin: 10px 0;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            border-left: 4px solid #fff;
+        }
+        
+        .new-theme-btn {
+            width: 100%;
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.15);
+            border: none;
+            border-radius: 10px;
+            color: white;
+            font-size: 16px;
+            margin-top: 10px;
+        }
+        
+        /* 响应式设计 */
+        @media (max-width: 480px) {
+            .header {
+                padding: 12px 15px;
+            }
+            
+            .input-area {
+                padding: 12px 15px;
+            }
+            
+            .control-btn {
+                width: 45px;
+                height: 45px;
+            }
         }
     </style>
 </head>
 <body>
     <div class="app-container">
-        <!-- 侧边栏 -->
-        <div class="sidebar">
-            <div class="theme-list">
-                <h3>我的主题</h3>
-                <div class="theme-item" data-theme="ideas">创意想法</div>
-                <div class="theme-item" data-theme="work">工作项目</div>
-                <div class="theme-item" data-theme="learning">学习笔记</div>
-            </div>
+        <!-- 顶部标题栏 -->
+        <div class="header">
+            <h1>思维气泡</h1>
+            <select class="theme-selector" id="theme-selector">
+                <option value="default">默认主题</option>
+            </select>
         </div>
         
         <!-- 主画布 -->
-        <div class="main-canvas">
+        <div class="canvas-container">
             <canvas id="bubble-canvas"></canvas>
             
             <!-- 控制按钮 -->
             <div class="controls">
-                <button id="zoom-in">放大</button>
-                <button id="zoom-out">缩小</button>
-                <button id="add-bubble">新建气泡</button>
+                <button class="control-btn" id="zoom-in">+</button>
+                <button class="control-btn" id="zoom-out">-</button>
+                <button class="control-btn" id="theme-btn">📁</button>
+                <button class="control-btn" id="export-btn">📤</button>
             </div>
-            
-            <!-- 浮动输入框 -->
-            <div class="floating-input" style="display: none;">
-                <textarea id="bubble-text"></textarea>
-                <button id="save-bubble">保存</button>
+        </div>
+        
+        <!-- 底部输入 -->
+        <div class="input-area">
+            <div class="input-group">
+                <input type="text" id="text-input" placeholder="输入您的想法...">
+                <button id="create-btn">添加</button>
             </div>
+        </div>
+        
+        <!-- 主题管理面板 -->
+        <div class="theme-panel" id="theme-panel">
+            <h2>主题管理</h2>
+            <div id="theme-list">
+                <!-- 主题列表会动态生成 -->
+            </div>
+            <button class="new-theme-btn" id="new-theme-btn">新建主题</button>
         </div>
     </div>
 
     <script>
-        class MindBubbleApp {
+        // 思维气泡手机APP
+        class MobileBubbleApp {
             constructor() {
-                this.currentTheme = null;
                 this.themes = new Map();
+                this.currentTheme = 'default';
                 this.scale = 1.0;
                 this.offset = { x: 0, y: 0 };
                 this.isDragging = false;
+                this.lastTouch = null;
                 
                 this.init();
             }
             
             async init() {
-                await this.loadThemes();
+                // 设置Canvas
+                this.canvas = document.getElementById('bubble-canvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.resizeCanvas();
+                
+                // 加载数据
+                await this.loadData();
+                
+                // 设置事件监听
                 this.setupEventListeners();
-                this.render();
+                
+                // 开始动画
+                this.animate();
             }
             
-            // 加载主题数据
-            async loadThemes() {
-                // 从本地存储或服务器加载
-                const saved = localStorage.getItem('mindBubbleThemes');
+            // 调整Canvas大小
+            resizeCanvas() {
+                this.canvas.width = window.innerWidth * window.devicePixelRatio;
+                this.canvas.height = window.innerHeight * window.devicePixelRatio;
+                this.ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+            }
+            
+            // 加载本地数据
+            async loadData() {
+                const saved = localStorage.getItem('mobileBubbleThemes');
                 if (saved) {
-                    this.themes = new Map(JSON.parse(saved));
+                    const data = JSON.parse(saved);
+                    this.themes = new Map(data);
+                } else {
+                    // 创建默认主题
+                    this.createTheme('default', '默认主题');
                 }
                 
-                if (this.themes.size === 0) {
-                    // 创建默认主题
-                    this.createTheme('ideas', '创意想法');
-                }
+                this.updateThemeSelector();
+            }
+            
+            // 保存数据到本地存储
+            saveData() {
+                const data = JSON.stringify([...this.themes]);
+                localStorage.setItem('mobileBubbleThemes', data);
             }
             
             // 创建新主题
@@ -112,57 +290,117 @@
                     created: new Date().toISOString()
                 };
                 this.themes.set(id, theme);
-                this.saveThemes();
+                this.saveData();
+                this.updateThemeSelector();
                 return theme;
+            }
+            
+            // 更新主题选择器
+            updateThemeSelector() {
+                const selector = document.getElementById('theme-selector');
+                const themeList = document.getElementById('theme-list');
+                
+                // 清空选项
+                selector.innerHTML = '';
+                themeList.innerHTML = '';
+                
+                // 添加主题选项
+                this.themes.forEach((theme, id) => {
+                    // 选择器选项
+                    const option = document.createElement('option');
+                    option.value = id;
+                    option.textContent = theme.name;
+                    option.selected = id === this.currentTheme;
+                    selector.appendChild(option);
+                    
+                    // 主题面板项目
+                    const themeItem = document.createElement('div');
+                    themeItem.className = 'theme-item';
+                    themeItem.innerHTML = `
+                        <h3>${theme.name}</h3>
+                        <p>${theme.bubbles.length} 个气泡</p>
+                    `;
+                    themeItem.addEventListener('click', () => {
+                        this.switchTheme(id);
+                        this.hideThemePanel();
+                    });
+                    themeList.appendChild(themeItem);
+                });
             }
             
             // 切换主题
             switchTheme(themeId) {
-                this.currentTheme = this.themes.get(themeId);
+                this.currentTheme = themeId;
                 this.render();
             }
             
             // 添加气泡
-            addBubble(content, position) {
-                if (!this.currentTheme) return;
+            addBubble(content) {
+                if (!content.trim()) return;
+                
+                const theme = this.themes.get(this.currentTheme);
+                if (!theme) return;
+                
+                // 计算位置（在屏幕中央附近）
+                const x = window.innerWidth / 2 + (Math.random() - 0.5) * 100;
+                const y = window.innerHeight / 2 + (Math.random() - 0.5) * 100;
                 
                 const bubble = {
                     id: 'bubble_' + Date.now(),
                     content,
-                    position,
+                    position: { x, y },
                     size: this.calculateSize(content),
                     created: new Date().toISOString()
                 };
                 
-                this.currentTheme.bubbles.push(bubble);
-                this.saveThemes();
+                theme.bubbles.push(bubble);
+                this.saveData();
                 this.render();
             }
             
             // 根据内容计算气泡大小
             calculateSize(content) {
                 const length = content.length;
-                if (length <= 20) return 'small';
-                if (length <= 50) return 'medium';
-                return 'large';
+                if (length <= 10) return 'small';
+                if (length <= 20) return 'medium';
+                if (length <= 30) return 'large';
+                return 'xlarge';
             }
             
-            // 保存数据
-            saveThemes() {
-                localStorage.setItem('mindBubbleThemes', 
-                    JSON.stringify([...this.themes]));
+            // 显示主题面板
+            showThemePanel() {
+                document.getElementById('theme-panel').classList.add('active');
             }
             
-            // 渲染画布
-            render() {
-                // 清除画布
-                // 应用缩放和偏移
-                // 绘制所有气泡
-                // 绘制连线等
+            // 隐藏主题面板
+            hideThemePanel() {
+                document.getElementById('theme-panel').classList.remove('active');
             }
             
+            // 设置事件监听
             setupEventListeners() {
-                // 缩放事件
+                // 窗口大小变化
+                window.addEventListener('resize', () => {
+                    this.resizeCanvas();
+                    this.render();
+                });
+                
+                // 添加气泡按钮
+                document.getElementById('create-btn').addEventListener('click', () => {
+                    const input = document.getElementById('text-input');
+                    this.addBubble(input.value);
+                    input.value = '';
+                    input.focus();
+                });
+                
+                // 回车键添加气泡
+                document.getElementById('text-input').addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        document.getElementById('create-btn').click();
+                    }
+                });
+                
+                // 缩放控制
                 document.getElementById('zoom-in').addEventListener('click', () => {
                     this.scale *= 1.2;
                     this.render();
@@ -173,44 +411,237 @@
                     this.render();
                 });
                 
-                // 画布拖拽
-                canvas.addEventListener('mousedown', this.startDrag.bind(this));
-                canvas.addEventListener('mousemove', this.drag.bind(this));
-                canvas.addEventListener('mouseup', this.endDrag.bind(this));
+                // 主题管理
+                document.getElementById('theme-btn').addEventListener('click', () => {
+                    this.showThemePanel();
+                });
                 
-                // 主题切换
-                document.querySelectorAll('.theme-item').forEach(item => {
-                    item.addEventListener('click', () => {
-                        this.switchTheme(item.dataset.theme);
-                    });
+                document.getElementById('theme-selector').addEventListener('change', (e) => {
+                    this.switchTheme(e.target.value);
+                });
+                
+                document.getElementById('new-theme-btn').addEventListener('click', () => {
+                    const name = prompt('请输入新主题名称:');
+                    if (name) {
+                        const id = 'theme_' + Date.now();
+                        this.createTheme(id, name);
+                        this.switchTheme(id);
+                        this.hideThemePanel();
+                    }
+                });
+                
+                // 导出功能
+                document.getElementById('export-btn').addEventListener('click', () => {
+                    this.exportData();
+                });
+                
+                // 触摸事件 - 拖拽画布
+                this.canvas.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    if (e.touches.length === 1) {
+                        this.isDragging = true;
+                        this.lastTouch = {
+                            x: e.touches[0].clientX,
+                            y: e.touches[0].clientY
+                        };
+                    }
+                });
+                
+                this.canvas.addEventListener('touchmove', (e) => {
+                    e.preventDefault();
+                    if (this.isDragging && e.touches.length === 1) {
+                        const touch = e.touches[0];
+                        const dx = touch.clientX - this.lastTouch.x;
+                        const dy = touch.clientY - this.lastTouch.y;
+                        
+                        this.offset.x += dx;
+                        this.offset.y += dy;
+                        
+                        this.lastTouch = {
+                            x: touch.clientX,
+                            y: touch.clientY
+                        };
+                        
+                        this.render();
+                    }
+                });
+                
+                this.canvas.addEventListener('touchend', () => {
+                    this.isDragging = false;
+                });
+                
+                // 双击重置视图
+                this.canvas.addEventListener('dblclick', () => {
+                    this.scale = 1.0;
+                    this.offset = { x: 0, y: 0 };
+                    this.render();
                 });
             }
             
-            startDrag(event) {
-                this.isDragging = true;
-                this.lastMousePos = { x: event.clientX, y: event.clientY };
+            // 渲染气泡
+            render() {
+                const theme = this.themes.get(this.currentTheme);
+                if (!theme) return;
+                
+                // 清除画布
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                
+                // 应用变换
+                this.ctx.save();
+                this.ctx.translate(this.offset.x, this.offset.y);
+                this.ctx.scale(this.scale, this.scale);
+                
+                // 绘制气泡
+                theme.bubbles.forEach(bubble => {
+                    this.drawBubble(bubble);
+                });
+                
+                this.ctx.restore();
             }
             
-            drag(event) {
-                if (!this.isDragging) return;
+            // 绘制单个气泡
+            drawBubble(bubble) {
+                const { position, content, size } = bubble;
                 
-                const dx = event.clientX - this.lastMousePos.x;
-                const dy = event.clientY - this.lastMousePos.y;
+                // 根据大小设置半径
+                let radius;
+                switch(size) {
+                    case 'small': radius = 40; break;
+                    case 'medium': radius = 60; break;
+                    case 'large': radius = 80; break;
+                    case 'xlarge': radius = 100; break;
+                    default: radius = 60;
+                }
                 
-                this.offset.x += dx;
-                this.offset.y += dy;
+                this.ctx.save();
+                this.ctx.translate(position.x, position.y);
                 
-                this.lastMousePos = { x: event.clientX, y: event.clientY };
+                // 绘制气泡阴影
+                this.ctx.beginPath();
+                this.ctx.arc(0, 0, radius + 3, 0, Math.PI * 2);
+                this.ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+                this.ctx.fill();
+                
+                // 绘制气泡
+                this.ctx.beginPath();
+                this.ctx.arc(0, 0, radius, 0, Math.PI * 2);
+                
+                // 渐变填充
+                const gradient = this.ctx.createRadialGradient(
+                    -radius * 0.3, -radius * 0.3, 0,
+                    0, 0, radius
+                );
+                gradient.addColorStop(0, 'rgba(255, 255, 255, 0.3)');
+                gradient.addColorStop(1, 'rgba(200, 200, 200, 0.1)');
+                
+                this.ctx.fillStyle = gradient;
+                this.ctx.fill();
+                
+                // 边框
+                this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+                this.ctx.lineWidth = 1;
+                this.ctx.stroke();
+                
+                // 绘制文字
+                this.ctx.textAlign = 'center';
+                this.ctx.textBaseline = 'middle';
+                this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+                
+                // 根据气泡大小调整字体
+                let fontSize;
+                if (size === 'small') fontSize = 12;
+                else if (size === 'medium') fontSize = 14;
+                else if (size === 'large') fontSize = 16;
+                else fontSize = 14;
+                
+                this.ctx.font = `${fontSize}px -apple-system, BlinkMacSystemFont`;
+                
+                // 文字换行
+                const maxWidth = radius * 1.6;
+                const words = content.split('');
+                let line = '';
+                const lines = [];
+                
+                for (let i = 0; i < words.length; i++) {
+                    const testLine = line + words[i];
+                    const metrics = this.ctx.measureText(testLine);
+                    
+                    if (metrics.width > maxWidth && line !== '') {
+                        lines.push(line);
+                        line = words[i];
+                    } else {
+                        line = testLine;
+                    }
+                }
+                lines.push(line);
+                
+                // 绘制多行文字
+                const lineHeight = fontSize + 2;
+                const startY = -((lines.length - 1) * lineHeight) / 2;
+                
+                lines.forEach((line, i) => {
+                    this.ctx.fillText(line, 0, startY + i * lineHeight);
+                });
+                
+                this.ctx.restore();
+            }
+            
+            // 导出数据
+            exportData() {
+                const theme = this.themes.get(this.currentTheme);
+                if (!theme || theme.bubbles.length === 0) {
+                    alert('当前主题没有气泡可导出');
+                    return;
+                }
+                
+                const text = theme.bubbles.map(bubble => bubble.content).join('\n');
+                const blob = new Blob([text], { type: 'text/plain' });
+                const url = URL.createObjectURL(blob);
+                
+                // 在移动端，我们可以尝试下载或分享
+                if (navigator.share) {
+                    // 使用Web Share API
+                    navigator.share({
+                        title: `思维气泡 - ${theme.name}`,
+                        text: text
+                    });
+                } else {
+                    // 传统下载方式
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `思维气泡-${theme.name}.txt`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                }
+                
+                URL.revokeObjectURL(url);
+            }
+            
+            // 动画循环
+            animate() {
                 this.render();
-            }
-            
-            endDrag() {
-                this.isDragging = false;
+                requestAnimationFrame(() => this.animate());
             }
         }
         
         // 启动应用
-        const app = new MindBubbleApp();
+        const app = new MobileBubbleApp();
+        
+        // PWA相关代码
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/sw.js').then(() => {
+                console.log('Service Worker 注册成功');
+            });
+        }
+        
+        // 添加到主屏幕提示
+        let deferredPrompt;
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            // 可以在这里显示安装提示
+        });
     </script>
 </body>
 </html>
