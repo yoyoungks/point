@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>思维气泡 - 可视化笔记软件</title>
+    <style>
+        .app-container {
+            display: flex;
+            height: 100vh;
+        }
+        
+        .sidebar {
+            width: 300px;
+            background: #2a2a2a;
+            border-right: 1px solid #444;
+        }
+        
+        .theme-list {
+            padding: 20px;
+        }
+        
+        .theme-item {
+            padding: 10px;
+            margin: 5px 0;
+            background: #333;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        
+        .main-canvas {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .controls {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            z-index: 100;
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- 侧边栏 -->
+        <div class="sidebar">
+            <div class="theme-list">
+                <h3>我的主题</h3>
+                <div class="theme-item" data-theme="ideas">创意想法</div>
+                <div class="theme-item" data-theme="work">工作项目</div>
+                <div class="theme-item" data-theme="learning">学习笔记</div>
+            </div>
+        </div>
+        
+        <!-- 主画布 -->
+        <div class="main-canvas">
+            <canvas id="bubble-canvas"></canvas>
+            
+            <!-- 控制按钮 -->
+            <div class="controls">
+                <button id="zoom-in">放大</button>
+                <button id="zoom-out">缩小</button>
+                <button id="add-bubble">新建气泡</button>
+            </div>
+            
+            <!-- 浮动输入框 -->
+            <div class="floating-input" style="display: none;">
+                <textarea id="bubble-text"></textarea>
+                <button id="save-bubble">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class MindBubbleApp {
+            constructor() {
+                this.currentTheme = null;
+                this.themes = new Map();
+                this.scale = 1.0;
+                this.offset = { x: 0, y: 0 };
+                this.isDragging = false;
+                
+                this.init();
+            }
+            
+            async init() {
+                await this.loadThemes();
+                this.setupEventListeners();
+                this.render();
+            }
+            
+            // 加载主题数据
+            async loadThemes() {
+                // 从本地存储或服务器加载
+                const saved = localStorage.getItem('mindBubbleThemes');
+                if (saved) {
+                    this.themes = new Map(JSON.parse(saved));
+                }
+                
+                if (this.themes.size === 0) {
+                    // 创建默认主题
+                    this.createTheme('ideas', '创意想法');
+                }
+            }
+            
+            // 创建新主题
+            createTheme(id, name) {
+                const theme = {
+                    id,
+                    name,
+                    bubbles: [],
+                    created: new Date().toISOString()
+                };
+                this.themes.set(id, theme);
+                this.saveThemes();
+                return theme;
+            }
+            
+            // 切换主题
+            switchTheme(themeId) {
+                this.currentTheme = this.themes.get(themeId);
+                this.render();
+            }
+            
+            // 添加气泡
+            addBubble(content, position) {
+                if (!this.currentTheme) return;
+                
+                const bubble = {
+                    id: 'bubble_' + Date.now(),
+                    content,
+                    position,
+                    size: this.calculateSize(content),
+                    created: new Date().toISOString()
+                };
+                
+                this.currentTheme.bubbles.push(bubble);
+                this.saveThemes();
+                this.render();
+            }
+            
+            // 根据内容计算气泡大小
+            calculateSize(content) {
+                const length = content.length;
+                if (length <= 20) return 'small';
+                if (length <= 50) return 'medium';
+                return 'large';
+            }
+            
+            // 保存数据
+            saveThemes() {
+                localStorage.setItem('mindBubbleThemes', 
+                    JSON.stringify([...this.themes]));
+            }
+            
+            // 渲染画布
+            render() {
+                // 清除画布
+                // 应用缩放和偏移
+                // 绘制所有气泡
+                // 绘制连线等
+            }
+            
+            setupEventListeners() {
+                // 缩放事件
+                document.getElementById('zoom-in').addEventListener('click', () => {
+                    this.scale *= 1.2;
+                    this.render();
+                });
+                
+                document.getElementById('zoom-out').addEventListener('click', () => {
+                    this.scale /= 1.2;
+                    this.render();
+                });
+                
+                // 画布拖拽
+                canvas.addEventListener('mousedown', this.startDrag.bind(this));
+                canvas.addEventListener('mousemove', this.drag.bind(this));
+                canvas.addEventListener('mouseup', this.endDrag.bind(this));
+                
+                // 主题切换
+                document.querySelectorAll('.theme-item').forEach(item => {
+                    item.addEventListener('click', () => {
+                        this.switchTheme(item.dataset.theme);
+                    });
+                });
+            }
+            
+            startDrag(event) {
+                this.isDragging = true;
+                this.lastMousePos = { x: event.clientX, y: event.clientY };
+            }
+            
+            drag(event) {
+                if (!this.isDragging) return;
+                
+                const dx = event.clientX - this.lastMousePos.x;
+                const dy = event.clientY - this.lastMousePos.y;
+                
+                this.offset.x += dx;
+                this.offset.y += dy;
+                
+                this.lastMousePos = { x: event.clientX, y: event.clientY };
+                this.render();
+            }
+            
+            endDrag() {
+                this.isDragging = false;
+            }
+        }
+        
+        // 启动应用
+        const app = new MindBubbleApp();
+    </script>
+</body>
+</html>
